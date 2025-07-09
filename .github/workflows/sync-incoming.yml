@@ -1,0 +1,68 @@
+name: Collect private submissions into incoming/
+
+on:
+  workflow_dispatch:
+  push:
+    branches:
+      - '**'
+
+jobs:
+  sync:
+    runs-on: ubuntu-latest
+
+    steps:
+      # 1) Checkout public repo
+      - name: Checkout public repo
+        uses: actions/checkout@v3
+        with:
+          repository: mbartudgn/harvard-cs50-projects
+          token: ${{ secrets.PUBLIC_REPO_TOKEN }}
+          ref: main
+          path: public
+
+      # 2) Checkout private repo
+      - name: Checkout private repo
+        uses: actions/checkout@v3
+        with:
+          repository: me50/mbartudgn
+          token: ${{ secrets.PRIVATE_REPO_TOKEN }}
+          fetch-depth: 0
+          path: private
+
+      # 3) Determine which branch triggered this run
+      - name: Determine branch
+        id: get_branch
+        run: echo "branch=${GITHUB_REF#refs/heads/}" >> $GITHUB_OUTPUT
+
+      # 4) Skip the 'main' branch entirely
+      - name: Skip main
+        if: steps.get_branch.outputs.branch == 'main'
+        run: |
+          echo "Skipping sync for 'main' branch"
+          exit 0
+
+      # 5) Copy each file into its own folder under public/incoming
+      - name: Copy files by filename into incoming/
+        run: |
+          cd private
+          for file in *; do
+            if [ -f "$file" ]; then
+              folder="${file%.*}"                        # strip extension
+              mkdir -p "../public/incoming/$folder"     # create folder
+              cp -u "$file" "../public/incoming/$folder/"  # copy file
+            fi
+          done
+
+      # 6) Commit & push only the incoming/ folder
+      - name: Commit and push changes
+        run: |
+          cd public
+          git config user.name "github-actions"
+          git config user.email "actions@github.com"
+          git add incoming/
+          if git diff --cached --quiet; then
+            echo "No incoming files to commit"
+          else
+            git commit -m "Update incoming submissions by filename"
+            git push origin main
+          fi
