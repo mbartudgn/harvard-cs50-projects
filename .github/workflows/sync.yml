@@ -1,55 +1,59 @@
-name: Sync private branches to public repo as folders
+name: Sync private branch files to public repo folders by filename
 
 on:
   workflow_dispatch:
   push:
     branches:
-      - '**'
-  # schedule:          
-  #   - cron: '0 0 * * *'  
+      - main
 
 jobs:
   sync:
     runs-on: ubuntu-latest
 
     steps:
-      - name: Get branch name
-        id: get_branch
-        run: echo "branch=$(echo ${GITHUB_REF#refs/heads/})" >> $GITHUB_OUTPUT
-
-      - name: Check if branch is main
-        id: check_main
-        run: |
-          if [ "${{ steps.get_branch.outputs.branch }}" = "main" ]; then
-            echo "is_main=true" >> $GITHUB_OUTPUT
-          else
-            echo "is_main=false" >> $GITHUB_OUTPUT
-          fi
-
-      - name: Checkout private repo (current branch)
-        if: steps.check_main.outputs.is_main == 'false'
+      - name: Checkout private repo (to list branches and files)
         uses: actions/checkout@v3
         with:
           repository: me50/mbartudgn
           token: ${{ secrets.PRIVATE_REPO_TOKEN }}
-          ref: ${{ steps.get_branch.outputs.branch }}
+          fetch-depth: 0
           path: private
+
+      - name: List private repo branches (except main)
+        id: list_branches
+        run: |
+          cd private
+          git fetch --all
+          branches=$(git branch -r | grep -v 'main' | grep -v 'HEAD' | sed 's|origin/||' | tr '\n' ' ')
+          echo "branches=$branches" >> $GITHUB_OUTPUT
 
       - name: Checkout public repo
         uses: actions/checkout@v3
         with:
           repository: mbartudgn/harvard-cs50-projects
           token: ${{ secrets.PUBLIC_REPO_TOKEN }}
+          ref: main
           path: public
 
-      - name: Copy private branch into public folder
-        if: steps.check_main.outputs.is_main == 'false'
+      - name: Sync files by filename from private branches
         run: |
-          mkdir -p public/${{ steps.get_branch.outputs.branch }}
-          cp -ru private/* public/${{ steps.get_branch.outputs.branch }}/
+          cd private
+          for branch in ${{ steps.list_branches.outputs.branches }}
+          do
+            echo "Processing branch: $branch"
+            git checkout $branch
 
-      - name: Commit and push to public repo
-        if: steps.check_main.outputs.is_main == 'false'
+            for file in *; do
+              if [ -f "$file" ]; then
+                folder_name="${file%.*}"
+                mkdir -p "../public/$folder_name"
+                cp -u "$file" "../public/$folder_name/"
+              fi
+            done
+
+          done
+
+      - name: Commit and push changes
         run: |
           cd public
           git config user.name "github-actions"
@@ -59,6 +63,6 @@ jobs:
             echo "No changes to commit"
           else
             git add .
-            git commit -m "Sync from private branch: ${{ steps.get_branch.outputs.branch }}"
+            git commit -m "Sync private branch files to public repo folders by filename"
             git push origin main
           fi
