@@ -3,7 +3,7 @@ name: Sync any private branch into public repo as a folder
 on:
   push:
     branches:
-      - '**'  # Private repodaki tüm branchlerdeki pushları takip eder
+      - '**'
 
 jobs:
   sync:
@@ -14,7 +14,17 @@ jobs:
         id: get_branch
         run: echo "branch=$(echo ${GITHUB_REF#refs/heads/})" >> $GITHUB_OUTPUT
 
+      - name: Check if branch is main
+        id: check_main
+        run: |
+          if [ "${{ steps.get_branch.outputs.branch }}" = "main" ]; then
+            echo "is_main=true" >> $GITHUB_OUTPUT
+          else
+            echo "is_main=false" >> $GITHUB_OUTPUT
+          fi
+
       - name: Checkout private repo (current branch)
+        if: steps.check_main.outputs.is_main == 'false'
         uses: actions/checkout@v3
         with:
           repository: me50/mbartudgn
@@ -30,14 +40,23 @@ jobs:
           path: public
 
       - name: Copy private branch into public folder
+        if: steps.check_main.outputs.is_main == 'false'
         run: |
           mkdir -p public/${{ steps.get_branch.outputs.branch }}
           cp -ru private/* public/${{ steps.get_branch.outputs.branch }}/
 
       - name: Commit and push to public repo
+        if: steps.check_main.outputs.is_main == 'false'
         run: |
           cd public
           git config user.name "github-actions"
           git config user.email "actions@github.com"
-          git add .
-          git diff --cached --quiet || (git commit -m "Sync from private branch: ${{ steps.get_branch.outputs.branch }}" && git push origin main)
+
+          # İlk defa public klasörü boşsa commit yap
+          if [ -z "$(git status --porcelain)" ]; then
+            echo "No changes to commit"
+          else
+            git add .
+            git commit -m "Sync from private branch: ${{ steps.get_branch.outputs.branch }}"
+            git push origin main
+          fi
