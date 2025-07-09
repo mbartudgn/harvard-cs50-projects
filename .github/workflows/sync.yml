@@ -1,9 +1,12 @@
-name: Sync any private branch into public repo as a folder
+name: Sync private branches to public repo as folders
 
 on:
+  workflow_dispatch:
   push:
     branches:
       - '**'
+  # schedule:          
+  #   - cron: '0 0 * * *'  
 
 jobs:
   sync:
@@ -52,7 +55,6 @@ jobs:
           git config user.name "github-actions"
           git config user.email "actions@github.com"
 
-          # İlk defa public klasörü boşsa commit yap
           if [ -z "$(git status --porcelain)" ]; then
             echo "No changes to commit"
           else
