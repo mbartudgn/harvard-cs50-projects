@@ -1,0 +1,37 @@
+name: Safe sync from private to public
+
+on:
+  push:
+    branches:
+      - main
+
+jobs:
+  sync:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout public repo
+        uses: actions/checkout@v3
+        with:
+          repository: mbartudgn/harvard-cs50-projects
+          token: ${{ secrets.PUBLIC_REPO_TOKEN }}
+          path: public
+
+      - name: Checkout private repo
+        uses: actions/checkout@v3
+        with:
+          repository: me50/mbartudgn
+          token: ${{ secrets.PRIVATE_REPO_TOKEN }}
+          path: private
+
+      - name: Copy updated files from private to public
+        run: |
+          cp -ru private/* public/
+
+      - name: Commit and push to public repo
+        run: |
+          cd public
+          git config user.name "github-actions"
+          git config user.email "actions@github.com"
+          git add .
+          git diff --cached --quiet || (git commit -m "Auto-sync from private repo" && git push origin main)
