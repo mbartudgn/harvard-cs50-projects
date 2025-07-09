@@ -1,13 +1,10 @@
-name: Collect private submissions into incoming/
+name: Bulk sync all private branches into incoming/
 
 on:
-  workflow_dispatch:
-  push:
-    branches:
-      - '**'
+  workflow_dispatch:   # manuel trigger only
 
 jobs:
-  sync:
+  bulk-sync:
     runs-on: ubuntu-latest
 
     steps:
@@ -20,7 +17,7 @@ jobs:
           ref: main
           path: public
 
-      # 2) Checkout private repo
+      # 2) Checkout private repo (tüm branch'leri görebilmek için fetch-depth:0)
       - name: Checkout private repo
         uses: actions/checkout@v3
         with:
@@ -29,40 +26,45 @@ jobs:
           fetch-depth: 0
           path: private
 
-      # 3) Determine which branch triggered this run
-      - name: Determine branch
-        id: get_branch
-        run: echo "branch=${GITHUB_REF#refs/heads/}" >> $GITHUB_OUTPUT
-
-      # 4) Skip the 'main' branch entirely
-      - name: Skip main
-        if: steps.get_branch.outputs.branch == 'main'
-        run: |
-          echo "Skipping sync for 'main' branch"
-          exit 0
-
-      # 5) Copy each file into its own folder under public/incoming
-      - name: Copy files by filename into incoming/
+      # 3) List all branches except main
+      - name: List private branches
+        id: list_branches
         run: |
           cd private
-          for file in *; do
-            if [ -f "$file" ]; then
-              folder="${file%.*}"                        # strip extension
-              mkdir -p "../public/incoming/$folder"     # create folder
-              cp -u "$file" "../public/incoming/$folder/"  # copy file
-            fi
+          git fetch --all
+          branches=$(git branch -r \
+            | grep -v 'HEAD' \
+            | grep -v 'origin/main' \
+            | sed 's|origin/||' \
+            | tr '\n' ' ')
+          echo "branches=$branches" >> $GITHUB_OUTPUT
+
+      # 4) For each branch, copy its root files into incoming/<filename>/
+      - name: Bulk copy into incoming/
+        run: |
+          cd private
+          for br in ${{ steps.list_branches.outputs.branches }}; do
+            echo ">>> Syncing branch: $br"
+            git checkout "$br"
+            for file in *; do
+              if [ -f "$file" ]; then
+                folder="${file%.*}"
+                mkdir -p "../public/incoming/$folder"
+                cp -u "$file" "../public/incoming/$folder/"
+              fi
+            done
           done
 
-      # 6) Commit & push only the incoming/ folder
-      - name: Commit and push changes
+      # 5) Commit & push ONLY the incoming/ folder
+      - name: Commit and push incoming
         run: |
           cd public
           git config user.name "github-actions"
           git config user.email "actions@github.com"
           git add incoming/
           if git diff --cached --quiet; then
-            echo "No incoming files to commit"
+            echo "No changes to commit"
           else
-            git commit -m "Update incoming submissions by filename"
+            git commit -m "Bulk sync all private branches into incoming/"
             git push origin main
           fi
