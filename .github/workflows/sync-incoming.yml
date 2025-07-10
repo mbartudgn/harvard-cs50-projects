@@ -1,14 +1,16 @@
-name: Bulk sync all private branches into incoming/
+name: Daily Sync Private to Public
 
 on:
-  workflow_dispatch:   # manuel trigger only
+  workflow_dispatch:   # manual trigger
+  schedule:
+    - cron: '0 4 * * *'  # Runs daily at 04:00 UTC (07:00 in Türkiye)
 
 jobs:
   bulk-sync:
     runs-on: ubuntu-latest
 
     steps:
-      # 1) Checkout public repo
+      # 1) Checkout the public repository
       - name: Checkout public repo
         uses: actions/checkout@v3
         with:
@@ -17,7 +19,7 @@ jobs:
           ref: main
           path: public
 
-      # 2) Checkout private repo (tüm branch'leri görebilmek için fetch-depth:0)
+      # 2) Checkout the private repository (fetch all branches)
       - name: Checkout private repo
         uses: actions/checkout@v3
         with:
@@ -39,8 +41,8 @@ jobs:
             | tr '\n' ' ')
           echo "branches=$branches" >> $GITHUB_OUTPUT
 
-      # 4) For each branch, copy its root files into incoming/<filename>/
-      - name: Bulk copy into incoming/
+      # 4) For each branch, copy its root files into incoming/<filename>/ folder
+      - name: Copy private files into incoming/
         run: |
           cd private
           for br in ${{ steps.list_branches.outputs.branches }}; do
@@ -55,7 +57,7 @@ jobs:
             done
           done
 
-      # 5) Commit & push ONLY the incoming/ folder
+      # 5) Commit and push only the incoming/ folder
       - name: Commit and push incoming
         run: |
           cd public
@@ -65,6 +67,6 @@ jobs:
           if git diff --cached --quiet; then
             echo "No changes to commit"
           else
-            git commit -m "Bulk sync all private branches into incoming/"
+            git commit -m "Automated daily sync of private branches into incoming/ folder"
             git push origin main
           fi
